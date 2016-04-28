@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Zebra Print Tool</string>
+    <string name="title_activity_print_receiver">PrintReceiverActivity</string>
+    <string name="menu_clear_active">Clear Active Printer</string>
+</resources>

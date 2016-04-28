@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest package="com.dimagi.android.zebraprinttool"
+          xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:required="false"/>
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:required="false"/>
+
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true">
+        <activity android:name=".MainActivity">
+        </activity>
+        <activity
+            android:name=".PrintReceiverActivity"
+            android:label="@string/title_activity_print_receiver">
+            <intent-filter>
+                <action android:name="com.dimagi.android.zebraprinttool.action.PrintTemplate"/>
+
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
