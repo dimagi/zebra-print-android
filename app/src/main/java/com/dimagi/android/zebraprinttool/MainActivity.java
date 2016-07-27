@@ -26,19 +26,14 @@ import com.zebra.sdk.printer.discovery.DiscoveryHandler;
 
 import java.util.ArrayList;
 
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements BluetoothStateHolder.BluetoothStateListener {
 
     public static final String RETURN_WHEN_SELECTED = "return_on_select";
-    ArrayList<DiscoveredPrinterBluetooth> printers = new ArrayList<>();
 
-    boolean bluetoothDiscoveryComplete = true;
+    boolean returnWhenSelected;
 
-    private final static String ACTIVE_PRINTER = "key_active_printer_address";
-
-    public static DiscoveredPrinterBluetooth activePrinter = null;
-    private boolean returnWhenSelected;
-
-    private String discoveryErrorMessage = null;
+    BluetoothStateHolder bluetoothService;
+    boolean springloadDiscoveryResult = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,9 +46,8 @@ public class MainActivity extends Activity {
                 setOnClickListener(new View.OnClickListener() {
                                        @Override
                                        public void onClick(View v) {
-                                           startBluetoothDiscovery(true);
-                                           updateCurrentPrinterView();
-
+                                           springloadDiscoveryResult = true;
+                                           bluetoothService.startBluetoothDiscovery();
                                        }
                                    }
 
@@ -63,7 +57,7 @@ public class MainActivity extends Activity {
                 .setOnClickListener(new View.OnClickListener() {
                                         @Override
                                         public void onClick(View v) {
-                                            launchPrinterSelect(printers);
+                                            launchPrinterSelect(bluetoothService.getDiscoveredPrinters());
                                         }
                                     }
 
@@ -82,8 +76,8 @@ public class MainActivity extends Activity {
                 setOnClickListener(new View.OnClickListener() {
                                        @Override
                                        public void onClick(View v) {
-                                           startBluetoothDiscovery(true);
-                                           updateCurrentPrinterView();
+                                           springloadDiscoveryResult = true;
+                                           bluetoothService.startBluetoothDiscovery();
                                        }
                                    }
 
@@ -91,65 +85,37 @@ public class MainActivity extends Activity {
 
     }
 
+    @Override
     protected void onResume() {
         super.onResume();
-        if(activePrinter == null && printers.isEmpty()) {
-            startBluetoothDiscovery(returnWhenSelected);
+        springloadDiscoveryResult = returnWhenSelected;
+        BluetoothStateHolder.attachContextListener(this, this);
+
+        if(bluetoothService.getActivePrinter() != null && returnWhenSelected) {
+            done();
+            return;
         }
-        updateCurrentPrinterView();
-    }
 
-    private void startBluetoothDiscovery(final boolean showDialog) {
-        if(bluetoothDiscoveryComplete) {
-            System.out.println("Discovery Started");
-            final String expectedActivePrinterId = getDefaultPrinterId();
-            discoveryErrorMessage = null;
-            try {
-                discoverButtonsDisabled();
-                updateCurrentPrinterView();
-                bluetoothDiscoveryComplete = false;
-
-                printers.clear();
-                BluetoothDiscoverer.findPrinters(this, new DiscoveryHandler() {
-
-                    public void foundPrinter(final DiscoveredPrinter printer) {
-                        DiscoveredPrinterBluetooth bluetoothPrinter = (DiscoveredPrinterBluetooth)printer;
-                        System.out.println("Found Printer: " + printer.address + " | " + bluetoothPrinter.friendlyName);
-
-                        if(activePrinter == null && bluetoothPrinter.address.equals(expectedActivePrinterId)) {
-                            //Only do this if the activePrinterId hasn't been cleared
-                            if(getDefaultPrinterId().equals(expectedActivePrinterId)) {
-                                System.out.println("reconnected default printer");
-                                MainActivity.this.setActivePrinter(bluetoothPrinter);
-                            }
-                        }
-                        printers.add(bluetoothPrinter);
-                    }
-
-                    public void discoveryFinished() {
-                        System.out.println("Discovery Finished");
-                        endDiscovery();
-                        if(showDialog && activePrinter == null && printers.size() > 0) {
-                            launchPrinterSelect(printers);
-                        }
-                    }
-
-                    public void discoveryError(String message) {
-                        System.out.println("Discovery Error: " + message);
-                        discoveryErrorMessage = message;
-                        endDiscovery();
-                    }
-                });
-            } catch (ConnectionException e) {
-                e.printStackTrace();
-                endDiscovery();
+        if(!bluetoothService.inDiscovery()) {
+            updateCurrentPrinterView();
+            if(springloadDiscoveryResult) {
+                ArrayList<DiscoveredPrinterBluetooth> printers = bluetoothService.getDiscoveredPrinters();
+                if(printers.size() > 0) {
+                    this.launchPrinterSelect(printers);
+                }
             }
         }
     }
+    @Override
+    public void attachStateHolder(BluetoothStateHolder bluetoothStateHolder) {
+        this.bluetoothService = bluetoothStateHolder;
+    }
 
-    private void discoverButtonsDisabled() {
-        this.findViewById(R.id.discover_printers).setEnabled(false);
-        this.findViewById(R.id.connect_btn_scan_again).setVisibility(View.GONE);
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        bluetoothService.detachStateListener(this);
     }
 
     private void updateCurrentPrinterView() {
@@ -165,35 +131,35 @@ public class MainActivity extends Activity {
 
         String advancedText = "";
 
-        if(activePrinter != null) {
-            advancedText = "Connected Printer: " + activePrinter.friendlyName;
+        if(bluetoothService.getActivePrinter() != null) {
+            advancedText = "Connected Printer: " + bluetoothService.getActivePrinter().friendlyName;
             humanReadable.setText("Printer connected! Starting print...");
             progressBar.setVisibility(View.GONE);
         }
-        else if(bluetoothDiscoveryComplete) {
-            if(printers.size() == 0) {
+        else if(!bluetoothService.inDiscovery()) {
+            if(bluetoothService.getDiscoveredPrinters().size() == 0) {
                 advancedText = "No printers found!.";
                 humanReadable.setText("No printers were found!");
             } else {
-                advancedText = "Discovery finished, " + printers.size() + " printers found";
+                advancedText = "Discovery finished, " + bluetoothService.getDiscoveredPrinters().size() + " printers found";
                 humanReadable.setText("Choose a printer from the list");
             }
-        } else if(getDefaultPrinterId() != null) {
-            advancedText = "Searching for default printer: " + getDefaultPrinterId();
+        } else if(bluetoothService.getDefaultPrinterId() != null) {
+            advancedText = "Searching for default printer: " + bluetoothService.getDefaultPrinterId();
             humanReadable.setText("Reconnecting to printer...");
         } else {
             advancedText = "Searching for bluetooth printers...";
             humanReadable.setText("Searching for printers around you...");
         }
 
-        if(discoveryErrorMessage != null) {
-            advancedText += "\n\n" + "Error during discovery: " +"\n" + discoveryErrorMessage;
+        if(bluetoothService.getDiscoveryErrorMessage() != null) {
+            advancedText += "\n\n" + "Error during discovery: " +"\n" + bluetoothService.getDiscoveryErrorMessage();
         }
 
         advancedTextView.setText(advancedText);
 
 
-        if(bluetoothDiscoveryComplete) {
+        if(!bluetoothService.inDiscovery()) {
             progressBar.setVisibility(View.GONE);
             scanAgain.setVisibility(View.VISIBLE);
             discover.setEnabled(true);
@@ -204,13 +170,8 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void endDiscovery() {
-        bluetoothDiscoveryComplete = true;
-        if(isFinishing()) { return; }
-        updateCurrentPrinterView();
-    }
-
     private void launchPrinterSelect(final ArrayList<DiscoveredPrinterBluetooth> printers) {
+        springloadDiscoveryResult = false;
         if(isFinishing()) { return; }
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setAdapter(new ArrayAdapter<DiscoveredPrinterBluetooth>(this, -1, printers) {
@@ -228,39 +189,11 @@ public class MainActivity extends Activity {
         }, new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
-                setActivePrinter(printers.get(which));
+                bluetoothService.setActivePrinter(printers.get(which));
             }
         });
         builder.setTitle("Choose Printer");
         builder.show();
-    }
-
-    public void setActivePrinter(DiscoveredPrinterBluetooth activePrinter) {
-        this.activePrinter = activePrinter;
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        prefs.edit().putString(ACTIVE_PRINTER, activePrinter.address).commit();
-        updateCurrentPrinterView();
-        if(returnWhenSelected) {
-            this.finish();
-        }
-    }
-
-    public String getDefaultPrinterId() {
-        return PreferenceManager.getDefaultSharedPreferences(this).getString(ACTIVE_PRINTER, null);
-    }
-
-    public void clearDefaultPrinterId() {
-        PreferenceManager.getDefaultSharedPreferences(this).edit().remove(ACTIVE_PRINTER).commit();
-        updateCurrentPrinterView();
-    }
-
-    /**
-     * Signal that the printer being used currently is not available or is having connection
-     * issues that need to be resolved before printing can proceed.
-     */
-    public static void SignalActivePrinterUnavailable() {
-        //For now just clear the active printer and let it re-select on discovery
-        activePrinter = null;
     }
 
     @Override
@@ -274,11 +207,33 @@ public class MainActivity extends Activity {
     public boolean onOptionsItemSelected(MenuItem item) {
         // Handle item selection
         if(item.getItemId() == R.id.clear_active_printer) {
-            activePrinter = null;
-            clearDefaultPrinterId();
+            bluetoothService.wipeActivePrinter();
             return true;
         } else {
             return super.onOptionsItemSelected(item);
+        }
+    }
+
+    private void done() {
+        this.setResult(Activity.RESULT_OK);
+        this.finish();
+    }
+
+    @Override
+    public void onBluetoothStateUpdate() {
+        if(isFinishing()) {
+            return;
+        } else {
+            if (bluetoothService.getActivePrinter() != null && returnWhenSelected) {
+                done();
+            } else if (springloadDiscoveryResult &&
+                    !bluetoothService.inDiscovery() &&
+                    bluetoothService.getActivePrinter() == null &&
+                    !bluetoothService.getDiscoveredPrinters().isEmpty()) {
+                launchPrinterSelect(bluetoothService.getDiscoveredPrinters());
+            }
+
+            updateCurrentPrinterView();
         }
     }
 }

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<GridLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:text="N-PAVL-A3"
+        android:layout_gravity="left"
+        android:id="@+id/print_job_name"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:text="PENDING"
+        android:id="@+id/print_job_status"
+        android:layout_gravity="right"
+        android:typeface="monospace"/>
+</GridLayout>

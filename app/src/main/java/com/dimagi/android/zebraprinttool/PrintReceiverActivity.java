@@ -1,173 +1,239 @@
 package com.dimagi.android.zebraprinttool;
 
 import android.app.Activity;
+import android.app.FragmentManager;
+import android.app.FragmentTransaction;
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.View;
+import android.widget.Button;
+import android.widget.ListView;
+import android.widget.TextView;
 
-import com.dimagi.android.zebraprinttool.util.IoUtil;
-import com.zebra.sdk.comm.Connection;
-import com.zebra.sdk.comm.ConnectionException;
-import com.zebra.sdk.printer.FieldDescriptionData;
-import com.zebra.sdk.printer.ZebraPrinter;
-import com.zebra.sdk.printer.ZebraPrinterFactory;
-import com.zebra.sdk.printer.ZebraPrinterLanguageUnknownException;
+import com.dimagi.android.zebraprinttool.util.PrintTaskListener;
+import com.dimagi.android.zebraprinttool.util.TaskHolderFragment;
 
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.ArrayList;
 
-public class PrintReceiverActivity extends Activity {
+public class PrintReceiverActivity extends Activity implements BluetoothStateHolder.BluetoothStateListener, PrintTaskListener {
 
     private static int REQUEST_PRINTER = 1;
 
-    private static String KEY_TEMPLATE_PATH = "zebra:template_file_path";
+    private static String KEY_BUNDLE_LIST = "zebra:bundle_list";
+    private static String FRAGMENT_PRINT_JOB = "print_fragment";
 
-    private String zplFilePath;
-    private String zplFileData;
-    private String zplTemplateTitle;
+    ArrayList<String> bundleKeyList;
+    ZebraPrintTask.PrintJob[] jobs;
 
-    private Map<Integer, String> templateVariables;
+    String taskUpdateMessage;
 
-    FieldDescriptionData[] templateVariableDescriptors;
+    BluetoothStateHolder bluetoothService;
 
-    boolean printHasSucceeded = false;
+    Button cancelPrint;
+    Button updateSettings;
+
+    TextView statusText;
+
+    PrintJobListAdapter adapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_print_receiver);
 
-        zplFilePath = getIntent().getStringExtra(KEY_TEMPLATE_PATH);
-        if (zplFilePath == null) {
-            throw new RuntimeException("No template path in print request!");
+        bundleKeyList = getIntent().getStringArrayListExtra(KEY_BUNDLE_LIST);
+        if (bundleKeyList == null || bundleKeyList.size() == 0) {
+            throw new RuntimeException("No print jobs provided to print activity!");
         }
+
+        jobs = generatePrintJobs();
+
+        cancelPrint = (Button)findViewById(R.id.button_cancel_print);
+        updateSettings = (Button)findViewById(R.id.button_update_settings);
+
+        cancelPrint.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                TaskHolderFragment printTaskFragment =
+                        (TaskHolderFragment)getFragmentManager().findFragmentByTag(FRAGMENT_PRINT_JOB);
+                if(printTaskFragment == null) {
+                    v.setEnabled(false);
+                    return;
+                }
+
+                printTaskFragment.cancelPrintTask();
+                cancelPrint.setText("Cancelling...");
+                cancelPrint.setEnabled(false);
+            }
+        });
+
+        updateSettings.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                calloutToSelectPrinter();
+            }
+        });
+        statusText = (TextView)findViewById(R.id.current_status_text);
+
+        adapter = new PrintJobListAdapter(this, jobs);
+
+        ListView view = (ListView)this.findViewById(R.id.list_print_jobs);
+        view.setAdapter(adapter);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (MainActivity.activePrinter == null) {
-            calloutToSelectPrinter();
-            return;
-        }
-        else if(printHasSucceeded) {
-            finishAndExit();
-            return;
+        BluetoothStateHolder.attachContextListener(this, this);
+
+        attachPrintTask();
+    }
+
+    @Override
+    public void attachStateHolder(BluetoothStateHolder bluetoothStateHolder) {
+        this.bluetoothService = bluetoothStateHolder;
+    }
+
+    private void attachPrintTask() {
+        FragmentManager fragmentManager = this.getFragmentManager();
+
+        TaskHolderFragment printTaskFragment =
+                (TaskHolderFragment)fragmentManager.findFragmentByTag(FRAGMENT_PRINT_JOB);
+
+        if(printTaskFragment == null) {
+            printTaskFragment = new TaskHolderFragment();
+
+            if(bluetoothService.getDefaultPrinterId() == null) {
+                printTaskFragment.setPrintConnectionSpringLoaded();
+            }
+
+
+            FragmentTransaction transaction = fragmentManager.beginTransaction();
+            transaction.add(printTaskFragment, FRAGMENT_PRINT_JOB);
+            fireNewPrintTask(printTaskFragment);
+            transaction.commit();
         } else {
-            triggerPrint();
-            return;
+            //the fragment will attach on its own, rely on that process to trigger a redraw
         }
+    }
+
+    private ZebraPrintTask.PrintJob[] generatePrintJobs() {
+        Bundle[] printSets = new Bundle[bundleKeyList.size()];
+        for(int i = 0 ; i < printSets.length; ++i) {
+            printSets[i] = this.getIntent().getBundleExtra(bundleKeyList.get(i));
+        }
+
+        ZebraPrintTask.PrintJob[] jobs = new ZebraPrintTask.PrintJob[printSets.length];
+        for(int i = 0; i < printSets.length ; ++i ){
+            jobs[i] = new ZebraPrintTask.PrintJob(i, printSets[i]);
+        }
+        return jobs;
+    }
+
+    private void fireNewPrintTask(TaskHolderFragment fragment) {
+        ZebraPrintTask printTask = new ZebraPrintTask(bluetoothService);
+        fragment.setTask(printTask);
+        printTask.execute(jobs);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        bluetoothService.detachStateListener(this);
     }
 
     private void calloutToSelectPrinter() {
         Intent i = new Intent(this, MainActivity.class);
-        i.putExtra(MainActivity.RETURN_WHEN_SELECTED, true);
+        if(bluetoothService == null) {
+            i.putExtra(MainActivity.RETURN_WHEN_SELECTED, true);
+        } else {
+            boolean haveActivePrinter = bluetoothService.getActivePrinter() != null;
+            i.putExtra(MainActivity.RETURN_WHEN_SELECTED, !haveActivePrinter);
+        }
         this.startActivityForResult(i, REQUEST_PRINTER);
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
-        // If we didn't get a printer from the result path, we should assume the user wasn't
-        // able to identify one and we need to bail before the external intent gets triggered
-        // again
-        if(MainActivity.activePrinter == null) {
-            this.setResult(RESULT_CANCELED);
-            this.finish();
-            return;
-        }
-    }
-
-
-    public void triggerPrint() {
-        populateZplFileData();
-        populateZplFileTemplateName();
-
-        try {
-            Connection connection = MainActivity.activePrinter.getConnection();
-            connection.open();
-            ZebraPrinter activePrinter = ZebraPrinterFactory.getInstance(connection);
-
-
-            populateTemplateVariableDescriptors(activePrinter);
-
-            loadVariablesFromIntent();
-
-            printTemplate(connection, activePrinter);
-
-            connection.close();
-
-            printHasSucceeded = true;
-
-            finishAndExit();
-        } catch (ConnectionException e) {
-            MainActivity.SignalActivePrinterUnavailable();
-            //If the connection broke in the middle, we need to re-evaluate the connected printer
-            calloutToSelectPrinter();
-            return;
-        } catch (ZebraPrinterLanguageUnknownException e) {
-            throw new RuntimeException(e);
-        } catch (UnsupportedEncodingException e) {
-            throw new RuntimeException(e);
-        }
-    }
 
     private void finishAndExit() {
+        //TODO: Job results
         this.setResult(Activity.RESULT_OK);
         this.finish();
     }
 
-    private void printTemplate(Connection connection, ZebraPrinter activePrinter) throws UnsupportedEncodingException, ConnectionException {
-        //First, ensure that the template is populated on the device
-        connection.write(zplFileData.getBytes("UTF-8"));
 
-        activePrinter.printStoredFormat(zplTemplateTitle, templateVariables);
+    @Override
+    public void onBluetoothStateUpdate() {
+        updateStatusText();
+
+        TaskHolderFragment printTaskFragment =
+                (TaskHolderFragment)this.getFragmentManager().findFragmentByTag(FRAGMENT_PRINT_JOB);
+
+        if(!bluetoothService.inDiscovery() &&
+                bluetoothService.getDiscoveredPrinters().size() > 0 &&
+                printTaskFragment != null &&
+                printTaskFragment.firePrintConnectionSpringIfLoaded()) {
+            this.calloutToSelectPrinter();
+        }
     }
 
-    private void loadVariablesFromIntent() {
-        Bundle intentData = getIntent().getExtras();
-        templateVariables = new HashMap<>();
-        for(FieldDescriptionData variableDescriptor : templateVariableDescriptors) {
-            Integer destination = variableDescriptor.fieldNumber;
-            String key = variableDescriptor.fieldName;
-
-            String value = intentData.getString(key);
-            if(value != null) {
-                templateVariables.put(destination, value);
+    private void updateStatusText() {
+        if(bluetoothService.getActivePrinter() != null) {
+            if(taskUpdateMessage != null) {
+                statusText.setText(taskUpdateMessage);
+            } else {
+                statusText.setText("Printer: Connected");
             }
+        } else if(bluetoothService.inDiscovery()) {
+            if(bluetoothService.getDefaultPrinterId() != null) {
+                statusText.setText("Printer: Connecting...");
+            } else {
+                statusText.setText("Printer: Searching for bluetooth devices");
+            }
+        } else {
+            String status = "";
+            if(bluetoothService.getDefaultPrinterId() != null) {
+                status += "Printer not found! ";
+            }
+            int devices = bluetoothService.getDiscoveredPrinters().size();
+            if(devices > 0) {
+                status += devices + " bluetooth devices found. ";
+            } else{
+                status += "No devices discovered. ";
+            }
+            if(bluetoothService.getDiscoveryErrorMessage() != null) {
+                status += "\nError searching for devices:\n" + bluetoothService.getDiscoveryErrorMessage();
+            }
+            statusText.setText(status);
         }
     }
 
-    private void populateZplFileTemplateName() {
-        //Try to extract the template name from the file directly
-        zplTemplateTitle = attemptToExtractFormatTitle(zplFileData);
-        //No guarantee this works...
-        if(zplTemplateTitle == null) {
-            //Hope the file is the same (this is what Zebra's app does...)
-            zplTemplateTitle = IoUtil.extractFilename(zplFilePath);
+    @Override
+    public void taskUpdate(ZebraPrintTask task) {
+        if(adapter != null) {
+            if(task.isWaiting()) {
+                taskUpdateMessage = "Waiting for printer... it may need manual input";
+            } else {
+                taskUpdateMessage = null;
+            }
+            updateStatusText();
+            adapter.notifyDataSetChanged();
+            this.cancelPrint.setEnabled(true);
         }
     }
 
-    public static String attemptToExtractFormatTitle(String zplData) {
-        Pattern p = Pattern.compile("\\^DFE:(.*)\\^FS");
-        Matcher m = p.matcher(zplData);
-        if(m.find()) {
-            return m.group(1);
+    @Override
+    public void taskFinished(final boolean taskSuccesful) {
+        cancelPrint.setEnabled(true);
+        if(taskSuccesful) {
+            cancelPrint.setText("Return");
+        } else {
+            cancelPrint.setText("Cancelled, press to return");
         }
-        return null;
-    }
-
-    private void populateZplFileData() {
-        try {
-            zplFileData = IoUtil.fileToString(zplFilePath);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void populateTemplateVariableDescriptors(ZebraPrinter activePrinter) {
-        templateVariableDescriptors = activePrinter.getVariableFields(zplFileData);
+        cancelPrint.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finishAndExit();
+            }
+        });
     }
 }

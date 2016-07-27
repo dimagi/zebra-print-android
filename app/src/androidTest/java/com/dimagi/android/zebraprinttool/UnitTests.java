@@ -14,7 +14,7 @@ public class UnitTests {
     @Test
     public void testZplFormatNameExtraction() {
         String formatFromFile = "^DFE:tut_tes4.ZPL^FS";
-        String format = PrintReceiverActivity.attemptToExtractFormatTitle(formatFromFile);
+        String format = ZebraPrintTask.attemptToExtractFormatTitle(formatFromFile);
         assertEquals(format, "tut_tes4.ZPL");
     }
 }

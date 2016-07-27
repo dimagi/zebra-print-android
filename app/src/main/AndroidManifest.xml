@@ -17,11 +17,13 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true">
-        <activity android:name=".MainActivity">
+        <activity android:name=".MainActivity"
+                  android:theme="@style/Theme.Dialog.NoTitle">
         </activity>
         <activity
             android:name=".PrintReceiverActivity"
-            android:label="@string/title_activity_print_receiver">
+            android:label="@string/title_activity_print_receiver"
+            android:theme="@style/Theme.Dialog.NoTitle">
             <intent-filter>
                 <action android:name="com.dimagi.android.zebraprinttool.action.PrintTemplate"/>
 
