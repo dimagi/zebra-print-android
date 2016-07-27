@@ -35,6 +35,7 @@ public class ZebraPrintTask extends AsyncTask<ZebraPrintTask.PrintJob,String,Boo
     private int currentJob;
 
     private static String KEY_TEMPLATE_PATH = "zebra:template_file_path";
+    private static String KEY_JOB_TITLE = "zebra:print_job_title";
 
     private boolean isWaitingForPrinter = false;
 
@@ -272,6 +273,9 @@ public class ZebraPrintTask extends AsyncTask<ZebraPrintTask.PrintJob,String,Boo
 
     public static class PrintJob {
 
+        public String getErrorMessage() {
+            return errorMessage;
+        }
 
         public enum Status {
             PENDING,
@@ -301,7 +305,7 @@ public class ZebraPrintTask extends AsyncTask<ZebraPrintTask.PrintJob,String,Boo
         }
 
         public String getDisplayName() {
-            return "Print Job: " + id;
+            return parameters.getString(KEY_JOB_TITLE, "Print Job: " + id);
         }
 
         public Status getStatus() {

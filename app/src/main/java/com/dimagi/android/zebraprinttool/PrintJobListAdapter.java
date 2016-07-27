@@ -46,6 +46,15 @@ public class PrintJobListAdapter extends ArrayAdapter<ZebraPrintTask.PrintJob> {
             statusString = "CANCELLED";
         }
 
+        TextView errorView = ((TextView)convertView.findViewById(R.id.print_job_error));
+
+        if(job.getStatus() == ZebraPrintTask.PrintJob.Status.ERROR) {
+            errorView.setVisibility(View.VISIBLE);
+            errorView.setText(job.getErrorMessage());
+        } else {
+            errorView.setVisibility(View.GONE);
+        }
+
         ((TextView)convertView.findViewById(R.id.print_job_status)).setText(statusString);
         convertView.setTag(job.getJobId());
         trackingTable.put(job.getJobId(), new WeakReference<>(convertView));
