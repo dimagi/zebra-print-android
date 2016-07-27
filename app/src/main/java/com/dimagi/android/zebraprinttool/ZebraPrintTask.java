@@ -156,9 +156,11 @@ public class ZebraPrintTask extends AsyncTask<ZebraPrintTask.PrintJob,String,Boo
             Map<Integer, String> templateVariables =
                     loadVariablesFromBundle(job.getJobParameters(), templateVariableDescriptors);
 
+            Log.v(TAG, "Starting Print");
             printTemplate(connection, activePrinter, job.getPrintData(), job.getTemplateTitle(), templateVariables);
-
+            Log.v(TAG, "Print submitted");
             connection.close();
+            Log.v(TAG, "Connection Closed");
 
             job.setPrintSuccessful();
         } catch (ZebraPrinterLanguageUnknownException e) {
@@ -336,6 +338,24 @@ public class ZebraPrintTask extends AsyncTask<ZebraPrintTask.PrintJob,String,Boo
 
         public String getTemplateTitle() {
             return zplTemplateTitle;
+        }
+
+        /**
+         * @return True if this job's status will not change further. False if the job status may
+         * still change.
+         */
+        public boolean isFinished() {
+            switch(this.getStatus()) {
+                case PENDING:
+                    return false;
+                case PRINTING:
+                    return false;
+                case SUCCESS:
+                    return true;
+                case ERROR:
+                    return true;
+            }
+            return true;
         }
     }
 

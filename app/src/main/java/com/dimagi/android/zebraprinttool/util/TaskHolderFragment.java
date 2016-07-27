@@ -3,7 +3,9 @@ package com.dimagi.android.zebraprinttool.util;
 import android.app.Activity;
 import android.app.Fragment;
 import android.content.Context;
+import android.os.Bundle;
 
+import com.dimagi.android.zebraprinttool.BluetoothStateHolder;
 import com.dimagi.android.zebraprinttool.ZebraPrintTask;
 
 /**
@@ -19,6 +21,21 @@ public class TaskHolderFragment extends Fragment implements PrintTaskListener {
     boolean taskSuccesful = false;
 
     PrintTaskListener forwardingListener;
+    private ZebraPrintTask.PrintJob[] printJobs;
+
+    String taskUpdateMessage;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        setRetainInstance(true);
+    }
+
+
+    public void setJobs(ZebraPrintTask.PrintJob[] printJobs) {
+        this.printJobs = printJobs;
+    }
 
     @Override
     public void onAttach(Context context) {
@@ -41,6 +58,12 @@ public class TaskHolderFragment extends Fragment implements PrintTaskListener {
 
     @Override
     public void taskUpdate(ZebraPrintTask task) {
+        if(printJob.isWaiting()) {
+            taskUpdateMessage = "Waiting for printer... it may need manual input";
+        } else {
+            taskUpdateMessage = null;
+        }
+
         if(forwardingListener == null) {
             //anything?
         } else {
@@ -82,4 +105,29 @@ public class TaskHolderFragment extends Fragment implements PrintTaskListener {
     }
 
 
+    public ZebraPrintTask.PrintJob[] getPrintJobs() {
+        return printJobs;
+    }
+
+    public void ensureTaskRunning(BluetoothStateHolder bluetoothService) {
+        if(this.printJob == null) {
+            ZebraPrintTask printTask = new ZebraPrintTask(bluetoothService);
+            setTask(printTask);
+
+            if(bluetoothService.getDefaultPrinterId() == null) {
+                setPrintConnectionSpringLoaded();
+            }
+            printTask.execute(printJobs);
+        }
+    }
+
+    public String getCurrentTaskMessage() {
+        return taskUpdateMessage;
+    }
+
+    public void signalKill() {
+        if(printJob != null) {
+            cancelPrintTask();
+        }
+    }
 }

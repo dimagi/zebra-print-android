@@ -16,6 +16,8 @@ import java.util.List;
  */
 public class PrintJobListAdapter extends ArrayAdapter<ZebraPrintTask.PrintJob> {
 
+    boolean isCancelled = false;
+
     HashMap<Integer, WeakReference<View>> trackingTable = new HashMap<>();
 
     public PrintJobListAdapter(Context context, ZebraPrintTask.PrintJob[] jobs) {
@@ -38,8 +40,18 @@ public class PrintJobListAdapter extends ArrayAdapter<ZebraPrintTask.PrintJob> {
 
     private void updateView(ZebraPrintTask.PrintJob job, View convertView) {
         ((TextView)convertView.findViewById(R.id.print_job_name)).setText(job.getDisplayName());
-        ((TextView)convertView.findViewById(R.id.print_job_status)).setText(job.getStatus().toString());
+
+        String statusString = job.getStatus().toString();
+        if(!job.isFinished() && isCancelled) {
+            statusString = "CANCELLED";
+        }
+
+        ((TextView)convertView.findViewById(R.id.print_job_status)).setText(statusString);
         convertView.setTag(job.getJobId());
         trackingTable.put(job.getJobId(), new WeakReference<>(convertView));
+    }
+
+    public void setModeCancelled() {
+        this.isCancelled = true;
     }
 }

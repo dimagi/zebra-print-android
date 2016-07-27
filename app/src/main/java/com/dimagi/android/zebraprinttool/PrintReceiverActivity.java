@@ -41,12 +41,7 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_print_receiver);
 
-        bundleKeyList = getIntent().getStringArrayListExtra(KEY_BUNDLE_LIST);
-        if (bundleKeyList == null || bundleKeyList.size() == 0) {
-            throw new RuntimeException("No print jobs provided to print activity!");
-        }
-
-        jobs = generatePrintJobs();
+        ensureFragmentConnected();
 
         cancelPrint = (Button)findViewById(R.id.button_cancel_print);
         updateSettings = (Button)findViewById(R.id.button_update_settings);
@@ -64,6 +59,11 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
                 printTaskFragment.cancelPrintTask();
                 cancelPrint.setText("Cancelling...");
                 cancelPrint.setEnabled(false);
+
+                if(adapter != null) {
+                    adapter.setModeCancelled();
+                    adapter.notifyDataSetChanged();
+                }
             }
         });
 
@@ -86,7 +86,10 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
         super.onResume();
         BluetoothStateHolder.attachContextListener(this, this);
 
-        attachPrintTask();
+        TaskHolderFragment printTaskFragment =
+                (TaskHolderFragment)getFragmentManager().findFragmentByTag(FRAGMENT_PRINT_JOB);
+        printTaskFragment.ensureTaskRunning(bluetoothService);
+        updateStatusText();
     }
 
     @Override
@@ -94,26 +97,29 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
         this.bluetoothService = bluetoothStateHolder;
     }
 
-    private void attachPrintTask() {
+    private void ensureFragmentConnected() {
         FragmentManager fragmentManager = this.getFragmentManager();
 
         TaskHolderFragment printTaskFragment =
                 (TaskHolderFragment)fragmentManager.findFragmentByTag(FRAGMENT_PRINT_JOB);
 
         if(printTaskFragment == null) {
-            printTaskFragment = new TaskHolderFragment();
-
-            if(bluetoothService.getDefaultPrinterId() == null) {
-                printTaskFragment.setPrintConnectionSpringLoaded();
+            bundleKeyList = getIntent().getStringArrayListExtra(KEY_BUNDLE_LIST);
+            if (bundleKeyList == null || bundleKeyList.size() == 0) {
+                throw new RuntimeException("No print jobs provided to print activity!");
             }
 
+            jobs = generatePrintJobs();
+
+            printTaskFragment = new TaskHolderFragment();
+            printTaskFragment.setJobs(jobs);
 
             FragmentTransaction transaction = fragmentManager.beginTransaction();
             transaction.add(printTaskFragment, FRAGMENT_PRINT_JOB);
-            fireNewPrintTask(printTaskFragment);
             transaction.commit();
         } else {
             //the fragment will attach on its own, rely on that process to trigger a redraw
+            this.jobs = printTaskFragment.getPrintJobs();
         }
     }
 
@@ -130,16 +136,17 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
         return jobs;
     }
 
-    private void fireNewPrintTask(TaskHolderFragment fragment) {
-        ZebraPrintTask printTask = new ZebraPrintTask(bluetoothService);
-        fragment.setTask(printTask);
-        printTask.execute(jobs);
-    }
-
     @Override
     protected void onPause() {
         super.onPause();
         bluetoothService.detachStateListener(this);
+
+        if(this.isFinishing()) {
+            TaskHolderFragment fragment = this.getTaskFragment();
+            if(fragment != null) {
+                fragment.signalKill();
+            }
+        }
     }
 
     private void calloutToSelectPrinter() {
@@ -160,13 +167,16 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
         this.finish();
     }
 
+    private TaskHolderFragment getTaskFragment() {
+        return (TaskHolderFragment)this.getFragmentManager().findFragmentByTag(FRAGMENT_PRINT_JOB);
+    }
+
 
     @Override
     public void onBluetoothStateUpdate() {
         updateStatusText();
 
-        TaskHolderFragment printTaskFragment =
-                (TaskHolderFragment)this.getFragmentManager().findFragmentByTag(FRAGMENT_PRINT_JOB);
+        TaskHolderFragment printTaskFragment = getTaskFragment();
 
         if(!bluetoothService.inDiscovery() &&
                 bluetoothService.getDiscoveredPrinters().size() > 0 &&
@@ -177,6 +187,7 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
     }
 
     private void updateStatusText() {
+        String taskUpdateMessage = getTaskFragment().getCurrentTaskMessage();
         if(bluetoothService.getActivePrinter() != null) {
             if(taskUpdateMessage != null) {
                 statusText.setText(taskUpdateMessage);
@@ -210,11 +221,6 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
     @Override
     public void taskUpdate(ZebraPrintTask task) {
         if(adapter != null) {
-            if(task.isWaiting()) {
-                taskUpdateMessage = "Waiting for printer... it may need manual input";
-            } else {
-                taskUpdateMessage = null;
-            }
             updateStatusText();
             adapter.notifyDataSetChanged();
             this.cancelPrint.setEnabled(true);
@@ -224,10 +230,25 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
     @Override
     public void taskFinished(final boolean taskSuccesful) {
         cancelPrint.setEnabled(true);
+        int succesfulJobs = getNumberOfSuccesfulJobs();
         if(taskSuccesful) {
-            cancelPrint.setText("Return");
+            if(succesfulJobs == jobs.length) {
+                finishAndExit();
+            } else {
+                cancelPrint.setText("Return");
+                if(adapter != null) {
+                    adapter.notifyDataSetChanged();
+                }
+            }
         } else {
-            cancelPrint.setText("Cancelled, press to return");
+            if(succesfulJobs == 0) {
+                finishAndExit();
+            } else {
+                cancelPrint.setText("Return");
+                if(adapter != null) {
+                    adapter.notifyDataSetChanged();
+                }
+            }
         }
         cancelPrint.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -235,5 +256,15 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
                 finishAndExit();
             }
         });
+    }
+
+    private int getNumberOfSuccesfulJobs() {
+        int numSuccesful = 0;
+        for(ZebraPrintTask.PrintJob job : jobs) {
+            if(job.getStatus() == ZebraPrintTask.PrintJob.Status.SUCCESS) {
+                numSuccesful++;
+            }
+        }
+        return numSuccesful;
     }
 }

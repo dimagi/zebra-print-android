@@ -133,7 +133,7 @@ public class MainActivity extends Activity implements BluetoothStateHolder.Bluet
 
         if(bluetoothService.getActivePrinter() != null) {
             advancedText = "Connected Printer: " + bluetoothService.getActivePrinter().friendlyName;
-            humanReadable.setText("Printer connected! Starting print...");
+            humanReadable.setText("Printer connected....");
             progressBar.setVisibility(View.GONE);
         }
         else if(!bluetoothService.inDiscovery()) {
