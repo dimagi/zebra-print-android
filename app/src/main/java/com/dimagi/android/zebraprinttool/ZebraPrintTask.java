@@ -295,6 +295,10 @@ public class ZebraPrintTask extends AsyncTask<ZebraPrintTask.PrintJob,String,Boo
         return isWaitingForPrinter;
     }
 
+    public int getCurrentJobNumber() {
+        return currentJob;
+    }
+
     public static class PrintJob {
 
         public String getErrorMessage() {

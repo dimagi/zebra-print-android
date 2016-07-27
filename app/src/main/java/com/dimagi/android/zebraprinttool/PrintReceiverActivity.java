@@ -5,6 +5,7 @@ import android.app.FragmentManager;
 import android.app.FragmentTransaction;
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ListView;
@@ -35,6 +36,9 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
     TextView statusText;
 
     PrintJobListAdapter adapter;
+
+    ListView listView;
+    boolean listViewTouched = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -77,8 +81,15 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
 
         adapter = new PrintJobListAdapter(this, jobs);
 
-        ListView view = (ListView)this.findViewById(R.id.list_print_jobs);
-        view.setAdapter(adapter);
+        listView = (ListView)this.findViewById(R.id.list_print_jobs);
+        listView.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                listViewTouched = true;
+                return false;
+            }
+        });
+        listView.setAdapter(adapter);
     }
 
     @Override
@@ -224,6 +235,10 @@ public class PrintReceiverActivity extends Activity implements BluetoothStateHol
             updateStatusText();
             adapter.notifyDataSetChanged();
             this.cancelPrint.setEnabled(true);
+
+            if(!listViewTouched) {
+                listView.smoothScrollToPosition(task.getCurrentJobNumber());
+            }
         }
     }
 
