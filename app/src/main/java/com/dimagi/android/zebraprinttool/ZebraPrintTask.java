@@ -41,6 +41,8 @@ public class ZebraPrintTask extends AsyncTask<ZebraPrintTask.PrintJob,String,Boo
 
     BluetoothStateHolder bluetoothService;
 
+    Connection cachedConnection;
+
     public ZebraPrintTask(BluetoothStateHolder bluetoothService) {
         this.bluetoothService = bluetoothService;
     }
@@ -76,44 +78,64 @@ public class ZebraPrintTask extends AsyncTask<ZebraPrintTask.PrintJob,String,Boo
 
         currentJob = 0;
 
-        while(currentJob < jobs.length) {
-            if(this.isCancelled()) {
-                return false;
-            }
-
-            PrintJob current = jobs[currentJob];
-            if(current.getStatus() == PrintJob.Status.ERROR) {
-                currentJob++;
-                continue;
-            }
-
-            if(!isPrinterAvailable() || isWaitingForPrinter) {
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-
+        try {
+            while (currentJob < jobs.length) {
+                if (this.isCancelled()) {
+                    return false;
                 }
-                if(!isPrinterAvailable()) {
+
+                PrintJob current = jobs[currentJob];
+                if (current.getStatus() == PrintJob.Status.ERROR) {
+                    currentJob++;
                     continue;
                 }
-            }
 
-            try {
-                advanceJob(current);
-                this.publishProgress(null);
-                if(current.getStatus() == PrintJob.Status.SUCCESS) {
+                if (!isPrinterAvailable() || isWaitingForPrinter) {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+
+                    }
+                    if (!isPrinterAvailable()) {
+                        continue;
+                    }
+                }
+
+                try {
+                    advanceJob(current);
+                    this.publishProgress(null);
+                    if (current.getStatus() == PrintJob.Status.SUCCESS) {
+                        currentJob++;
+                    }
+                } catch (ConnectionException connectionIssue) {
+                    connectionIssue.printStackTrace();
+                    closeAndClearCachedConnectionHandle();
+                    //TODO: Maybe try to re-open the connection handle once before completely
+                    //expiring the attached printer?
+                    signalPrinterUnavailable();
+                } catch (Exception e) {
+                    current.setJobToError(e.getMessage());
+                    this.publishProgress(null);
                     currentJob++;
                 }
-            }catch(ConnectionException connectionIssue) {
-                connectionIssue.printStackTrace();
-                signalPrinterUnavailable();
-            } catch(Exception e) {
-                current.setJobToError(e.getMessage());
-                this.publishProgress(null);
-                currentJob++;
+            }
+            return true;
+        } finally {
+            closeAndClearCachedConnectionHandle();
+        }
+    }
+
+    private void closeAndClearCachedConnectionHandle() {
+        if(cachedConnection != null) {
+            if(cachedConnection.isConnected()) {
+                try {
+                    cachedConnection.close();
+                }catch(ConnectionException e) {
+                    e.printStackTrace();
+                }
             }
         }
-        return true;
+        cachedConnection = null;
     }
 
     private void signalPrinterUnavailable() {
@@ -136,16 +158,14 @@ public class ZebraPrintTask extends AsyncTask<ZebraPrintTask.PrintJob,String,Boo
     }
 
     private void attemptJobPrint(PrintJob job) throws ConnectionException {
-        Connection connection = getCurrentConnection();
+        Connection connection = getPrinterConnection();
         try {
-            connection.open();
             ZebraPrinter activePrinter = ZebraPrinterFactory.getInstance(connection);
 
             PrinterStatus status = activePrinter.getCurrentStatus();
 
             if(!status.isReadyToPrint) {
                 isWaitingForPrinter = true;
-                connection.close();
                 return;
             } else {
                 isWaitingForPrinter = false;
@@ -160,27 +180,31 @@ public class ZebraPrintTask extends AsyncTask<ZebraPrintTask.PrintJob,String,Boo
             Log.v(TAG, "Starting Print");
             printTemplate(connection, activePrinter, job.getPrintData(), job.getTemplateTitle(), templateVariables);
             Log.v(TAG, "Print submitted");
-            connection.close();
-            Log.v(TAG, "Connection Closed");
 
             job.setPrintSuccessful();
         } catch (ZebraPrinterLanguageUnknownException e) {
             throw wrap("Unrecognized language for template at: " + job.getPrintFilename(), e);
         } catch (UnsupportedEncodingException e) {
             throw wrap("Unsupported encoding for template file at: " + job.getPrintFilename(), e);
-        } finally {
-            if(connection.isConnected()) {
-                connection.close();
-            }
         }
     }
 
-    private Connection getCurrentConnection() throws ConnectionException {
+    private Connection getPrinterConnection() throws ConnectionException {
         DiscoveredPrinterBluetooth activePrinter = bluetoothService.getActivePrinter();
         if(activePrinter == null) {
             throw new ConnectionException("No Active Printer");
         }
-        return activePrinter.getConnection();
+
+        if(cachedConnection != null) {
+            if(cachedConnection.isConnected()) {
+                return cachedConnection;
+            }
+
+            cachedConnection = null;
+        }
+        cachedConnection = activePrinter.getConnection();
+        cachedConnection.open();
+        return cachedConnection;
     }
 
     private void printTemplate(Connection connection, ZebraPrinter activePrinter,
