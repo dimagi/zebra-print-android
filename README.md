@@ -15,21 +15,34 @@ Unfortunately no web resource is available over Maven or other online dependency
 
 The following example code prints out a label from a presumed ZPL file **label.zpl** which contains two arguments, a url encoded in a barcode and a string description that are provided by the host application. The two arguments are presumed to be **Variable Text** components in the label, and their **Prompt Text** will be used as the key.
 
+The library supports printing multiple jobs are once (each passed individually as a bundle), providing the key to each bundle in the `zebra:bundle_list` parameter. This example only prints a single job.
 
 ```
     private void printZplTemplate(String barcodeData, String textData){
         String zebraTemplateFilepath = "/sdcard/download/test.zpl";
-        
         Intent i = new Intent("com.dimagi.android.zebraprinttool.action.PrintTemplate");
         
-        i.putExtra("zebra:template_file_path", zebraTemplateFilepath);
+        String SINGLE_JOB_KEY = "single_job";
+        ArrayList<String> bundleKeyList = new ArrayList<>();
+        bundleKeyList.add(SINGLE_JOB_KEY);
+        
+        i.putExtra("zebra:bundle_list", bundleKeyList);
+        i.putExtra(SINGLE_JOB_KEY, getSinglePrintJob(barcodeData, textData);
+        
+        this.startActivityForResult(i, ZEBRA_CALLOUT);
+    }
+    
+    public Bundle getSinglePrintJob(String barcodeData, String textData) {
+        Bundle printJobParameters = new Bundle();
+        
+        printJobParameters.putExtra("zebra:template_file_path", zebraTemplateFilepath);
         
         Bundle labelVariableArguments = new Bundle();
         labelVariableArguments.putString("barcode_data", barcodeData);
         labelVariableArguments.putString("text_data", textData);
-        i.putExtras(labelVariableArguments);
+        printJobParameters.putExtras(labelVariableArguments);
         
-        this.startActivityForResult(i, ZEBRA_CALLOUT);
+        return printJobParameters;
     }
 ```
 
@@ -37,4 +50,3 @@ The following example code prints out a label from a presumed ZPL file **label.z
  * Only supports Bluetooth print devices
  * ZPL Templates must be provided as filesystem paths
  * [Presumed limitation of Zebra API] Labels only seem to support using the **printer settings** for sizing and spacing, encoding these values in the ZPL template results in a blank print.
- * [Pending] Reasonable feedback UI during print execution
