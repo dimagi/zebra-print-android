@@ -17,7 +17,7 @@ The following example code prints out a label from a presumed ZPL file **label.z
 
 The library supports printing multiple jobs are once (each passed individually as a bundle), providing the key to each bundle in the `zebra:bundle_list` parameter. This example only prints a single job.
 
-```
+```java
     private void printZplTemplate(String barcodeData, String textData){
         String zebraTemplateFilepath = "/sdcard/download/test.zpl";
         Intent i = new Intent("com.dimagi.android.zebraprinttool.action.PrintTemplate");
